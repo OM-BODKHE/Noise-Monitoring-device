@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Noise Level Meter</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0d0d0d;
+    color: #e8e6df;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  h1 {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 28px;
+    text-align: center;
+  }
+
+  .card {
+    background: #161616;
+    border: 1px solid #2a2a2a;
+    border-radius: 20px;
+    padding: 32px 28px;
+    width: 100%;
+    max-width: 540px;
+  }
+
+  /* ── Top row ── */
+  .top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .app-title { font-size: 15px; font-weight: 500; color: #ccc; }
+  .live-pill {
+    display: flex; align-items: center; gap: 6px;
+    background: #1e1e1e;
+    border: 1px solid #2e2e2e;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: #555;
+    transition: all 0.3s;
+  }
+  .live-pill.on { color: #5DBF8A; border-color: #2e5040; background: #162018; }
+  .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #444; transition: background 0.3s;
+  }
+  .dot.on { background: #5DBF8A; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+  /* ── Big dB display ── */
+  .db-section { margin-bottom: 6px; }
+  .db-row { display: flex; align-items: flex-end; gap: 10px; }
+  .db-number {
+    font-size: 72px;
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: -4px;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.35s;
+    min-width: 180px;
+  }
+  .db-unit { font-size: 14px; color: #555; padding-bottom: 12px; }
+
+  /* ── Label badge ── */
+  .badge {
+    padding: 5px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.35s;
+    margin-bottom: 12px;
+    display: inline-block;
+  }
+  .badge-idle   { background: #222; color: #666; }
+  .badge-quiet  { background: #142318; color: #5DBF8A; border: 1px solid #2e5040; }
+  .badge-normal { background: #251e0e; color: #E8A83E; border: 1px solid #5c4010; }
+  .badge-noisy  { background: #231010; color: #E8605A; border: 1px solid #5c2020; }
+
+  /* ── Meter bar ── */
+  .meter-track {
+    width: 100%; height: 12px;
+    background: #1e1e1e;
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 14px 0 5px;
+  }
+  .meter-fill {
+    height: 100%;
+    border-radius: 999px;
+    width: 0%;
+    transition: width 0.07s linear, background 0.3s;
+    background: #5DBF8A;
+  }
+  .scale-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #3a3a3a;
+    padding: 0 2px;
+    margin-bottom: 20px;
+  }
+
+  /* ── History chart ── */
+  .chart-label { font-size: 11px; color: #444; margin-bottom: 6px; }
+  canvas {
+    width: 100%;
+    height: 88px;
+    background: #111;
+    border-radius: 12px;
+    display: block;
+    margin-bottom: 20px;
+  }
+
+  /* ── Stats grid ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .stat-box {
+    background: #111;
+    border-radius: 12px;
+    padding: 14px;
+    text-align: center;
+  }
+  .stat-name { font-size: 11px; color: #555; margin-bottom: 6px; }
+  .stat-value {
+    font-size: 22px;
+    font-weight: 400;
+    color: #ccc;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Suggestion text ── */
+  .suggestion {
+    text-align: center;
+    font-size: 13px;
+    color: #555;
+    min-height: 18px;
+    margin-bottom: 22px;
+    transition: color 0.3s;
+    line-height: 1.5;
+  }
+
+  /* ── Buttons ── */
+  .btn-row { display: flex; gap: 8px; }
+  .btn {
+    flex: 1;
+    padding: 13px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-start {
+    background: #142318;
+    color: #5DBF8A;
+    border-color: #2e5040;
+  }
+  .btn-start:hover { background: #1c2f20; }
+  .btn-stop {
+    background: #231010;
+    color: #E8605A;
+    border-color: #5c2020;
+  }
+  .btn-stop:hover { background: #2e1414; }
+  .btn-reset {
+    background: #1a1a1a;
+    color: #666;
+    border-color: #2e2e2e;
+  }
+  .btn-reset:hover { background: #202020; }
+
+  /* ── Warning box ── */
+  .warn-box {
+    background: #251e0e;
+    border: 1px solid #5c4010;
+    color: #E8A83E;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    display: none;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  /* ── Footer note ── */
+  .footer {
+    margin-top: 18px;
+    font-size: 11px;
+    color: #3a3a3a;
+    text-align: center;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<h1>Noise Level Meter</h1>
+
+<div class="card">
+
+  <div class="top-row">
+    <span class="app-title">Live microphone monitor</span>
+    <span class="live-pill" id="livepill">
+      <span class="dot" id="dot"></span>
+      <span id="status-text">idle</span>
+    </span>
+  </div>
+
+  <div class="warn-box" id="warnbox">
+    Microphone access was denied. Please click Allow when the browser asks, or check your browser's site permissions.
+  </div>
+
+  <div class="db-section">
+    <div class="db-row">
+      <div class="db-number" id="db-number">--</div>
+      <div class="db-unit">dBFS</div>
+    </div>
+    <span class="badge badge-idle" id="badge">waiting</span>
+  </div>
+
+  <div class="meter-track">
+    <div class="meter-fill" id="meter-fill"></div>
+  </div>
+  <div class="scale-row">
+    <span>-60 dB (silent)</span>
+    <span>-45</span>
+    <span>-30</span>
+    <span>-15</span>
+    <span>0 dB (max)</span>
+  </div>
+
+  <div class="chart-label">Sound history</div>
+  <canvas id="history-canvas"></canvas>
+
+  <div class="stats-grid">
+    <div class="stat-box">
+      <div class="stat-name">Average</div>
+      <div class="stat-value" id="stat-avg">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-name">Quietest</div>
+      <div class="stat-value" id="stat-min">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-name">Loudest</div>
+      <div class="stat-value" id="stat-max">--</div>
+    </div>
+  </div>
+
+  <div class="suggestion" id="suggestion">Press Start and allow microphone access</div>
+
+  <div class="btn-row">
+    <button class="btn btn-start" id="btn-start" onclick="startMeter()">Start recording</button>
+    <button class="btn btn-stop"  id="btn-stop"  onclick="stopMeter()"  style="display:none">Stop</button>
+    <button class="btn btn-reset" id="btn-reset" onclick="resetStats()" style="display:none">Reset stats</button>
+  </div>
+
+</div>
+
+<div class="footer">
+  Values are in dBFS (decibels relative to full scale).<br>
+  Works best with a working microphone. Use Chrome or Firefox for best results.
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let audioCtx, analyser, sourceNode, micStream, rafId;
+let running = false;
+let levels  = [];
+
+const canvas = document.getElementById('history-canvas');
+const ctx    = canvas.getContext('2d');
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Map dB value (–60 to 0) → 0..100 percentage */
+function toPct(db) {
+  return Math.max(0, Math.min(100, ((Math.max(-60, Math.min(0, db)) + 60) / 60) * 100));
+}
+
+/** Pick a colour based on noise level */
+function levelColor(db) {
+  if (db <= -35) return '#5DBF8A';   // green  → quiet
+  if (db <= -20) return '#E8A83E';   // amber  → normal
+  return '#E8605A';                  // red    → noisy
+}
+
+/** Return label, badge CSS class, suggestion text, and accent colour */
+function classify(db) {
+  if (db <= -35) return {
+    label: 'Quiet',
+    cls:   'badge-quiet',
+    tip:   'Good for study, reading or deep focus.',
+    color: '#5DBF8A'
+  };
+  if (db <= -20) return {
+    label: 'Normal',
+    cls:   'badge-normal',
+    tip:   'Good for conversation or light work.',
+    color: '#E8A83E'
+  };
+  return {
+    label: 'Noisy',
+    cls:   'badge-noisy',
+    tip:   'Too noisy — not ideal for study or focus.',
+    color: '#E8605A'
+  };
+}
+
+// ─── History chart ───────────────────────────────────────────────────────────
+function drawHistory() {
+  const W  = canvas.clientWidth  || 480;
+  const H  = 88;
+  const DPR = devicePixelRatio || 1;
+  canvas.width  = W * DPR;
+  canvas.height = H * DPR;
+  ctx.scale(DPR, DPR);
+  ctx.clearRect(0, 0, W, H);
+
+  const BAR_W = 5, GAP = 2;
+  const maxBars = Math.floor(W / (BAR_W + GAP));
+  const slice   = levels.slice(-maxBars);
+
+  slice.forEach((db, i) => {
+    const alpha = 0.25 + 0.75 * ((i + 1) / slice.length);  // fade in from left
+    const barH  = Math.max(3, (toPct(db) / 100) * (H - 8));
+    const x     = i * (BAR_W + GAP);
+    const y     = H - barH - 4;
+    ctx.fillStyle   = levelColor(db);
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.roundRect(x, y, BAR_W, barH, 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ─── Stats update ────────────────────────────────────────────────────────────
+function updateStats() {
+  if (!levels.length) return;
+  const avg = levels.reduce((s, v) => s + v, 0) / levels.length;
+  document.getElementById('stat-avg').textContent = avg.toFixed(1);
+  document.getElementById('stat-min').textContent = Math.min(...levels).toFixed(1);
+  document.getElementById('stat-max').textContent = Math.max(...levels).toFixed(1);
+}
+
+// ─── Main audio loop ─────────────────────────────────────────────────────────
+function tick() {
+  if (!running) return;
+
+  const buffer = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buffer);
+
+  // Compute RMS → dBFS
+  const rms = Math.sqrt(buffer.reduce((s, v) => s + v * v, 0) / buffer.length);
+  const db  = rms <= 1e-12
+    ? -120
+    : Math.max(-60, Math.min(0, 20 * Math.log10(rms)));
+
+  const info = classify(db);
+  const pct  = toPct(db);
+
+  // Update big number
+  const numEl = document.getElementById('db-number');
+  numEl.textContent  = db.toFixed(1);
+  numEl.style.color  = info.color;
+
+  // Update meter bar
+  const fill = document.getElementById('meter-fill');
+  fill.style.width      = pct + '%';
+  fill.style.background = levelColor(db);
+
+  // Update badge
+  const badge = document.getElementById('badge');
+  badge.textContent = info.label;
+  badge.className   = 'badge ' + info.cls;
+
+  // Update suggestion
+  document.getElementById('suggestion').textContent = info.tip;
+
+  // Store reading
+  levels.push(db);
+
+  // Refresh stats + chart every 5 readings
+  if (levels.length % 5 === 0) {
+    updateStats();
+    drawHistory();
+  }
+
+  rafId = requestAnimationFrame(tick);
+}
+
+// ─── Start ───────────────────────────────────────────────────────────────────
+async function startMeter() {
+  document.getElementById('warnbox').style.display = 'none';
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+
+    audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+    analyser   = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    sourceNode = audioCtx.createMediaStreamSource(micStream);
+    sourceNode.connect(analyser);
+
+    running = true;
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('livepill').classList.add('on');
+    document.getElementById('status-text').textContent     = 'recording';
+    document.getElementById('btn-start').style.display     = 'none';
+    document.getElementById('btn-stop').style.display      = '';
+    document.getElementById('btn-reset').style.display     = '';
+    document.getElementById('suggestion').textContent      = 'Listening... make some noise!';
+
+    tick();
+  } catch (err) {
+    document.getElementById('warnbox').style.display = 'block';
+    document.getElementById('suggestion').textContent = 'Could not access microphone: ' + err.message;
+  }
+}
+
+// ─── Stop ────────────────────────────────────────────────────────────────────
+function stopMeter() {
+  running = false;
+  cancelAnimationFrame(rafId);
+  if (sourceNode) sourceNode.disconnect();
+  if (audioCtx)   audioCtx.close();
+  if (micStream)  micStream.getTracks().forEach(t => t.stop());
+
+  document.getElementById('dot').classList.remove('on');
+  document.getElementById('livepill').classList.remove('on');
+  document.getElementById('status-text').textContent     = 'stopped';
+  document.getElementById('btn-start').style.display     = '';
+  document.getElementById('btn-stop').style.display      = 'none';
+  document.getElementById('suggestion').textContent      = 'Recording stopped. Press Start to record again.';
+
+  updateStats();
+  drawHistory();
+}
+
+// ─── Reset ───────────────────────────────────────────────────────────────────
+function resetStats() {
+  levels = [];
+  ['stat-avg', 'stat-min', 'stat-max'].forEach(id => {
+    document.getElementById(id).textContent = '--';
+  });
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+</script>
+</body>
+</html>
