@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dBSPL Noise Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@200;400;600&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #080a0e;
+    --card:     #0d1117;
+    --surface:  #141920;
+    --border:   #1e2733;
+    --text:     #d4dbe8;
+    --muted:    #4a5568;
+    --green:    #22d3a0;
+    --yellow:   #f5c842;
+    --orange:   #f58c42;
+    --red:      #f54242;
+    --purple:   #a78bfa;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 40px;
+  }
+
+  /* ── Header ── */
+  .header {
+    width: 100%; max-width: 700px;
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .header-title { font-size: 18px; font-weight: 800; letter-spacing: 0.04em; }
+  .header-title span { color: var(--green); }
+  .live-chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    transition: all 0.3s;
+  }
+  .live-chip.on { color: var(--green); border-color: #1a4035; background: #0d1f1a; }
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); transition: background 0.3s;
+  }
+  .live-dot.on { background: var(--green); animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* ── Main card ── */
+  .card {
+    width: 100%; max-width: 700px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  /* ── Big SPL display ── */
+  .spl-panel {
+    padding: 28px 28px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .spl-left { flex: 1; }
+  .spl-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--muted);
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .spl-value-row { display: flex; align-items: flex-end; gap: 8px; }
+  .spl-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 80px; font-weight: 200; line-height: 1;
+    letter-spacing: -4px;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.3s;
+    min-width: 200px;
+  }
+  .spl-unit {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; color: var(--muted);
+    padding-bottom: 14px;
+  }
+
+  /* ── Badge ── */
+  .badge {
+    padding: 5px 16px;
+    border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+    letter-spacing: 0.05em;
+    display: inline-block;
+    margin-top: 10px;
+    transition: all 0.3s;
+  }
+  .b-idle    { background:#1a2030; color:#4a5568; }
+  .b-silence { background:#0d1f2d; color:#38bdf8; border: 1px solid #1e4060; }
+  .b-quiet   { background:#0d1f1a; color:var(--green); border: 1px solid #1a4035; }
+  .b-moderate{ background:#1f1a0d; color:var(--yellow); border: 1px solid #40350a; }
+  .b-loud    { background:#1f120d; color:var(--orange); border: 1px solid #40200a; }
+  .b-danger  { background:#1f0d0d; color:var(--red); border: 1px solid #401010; }
+
+  /* ── SPL right info ── */
+  .spl-right {
+    display: flex; flex-direction: column; gap: 8px;
+    min-width: 160px;
+  }
+  .ref-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  .ref-name { color: var(--muted); }
+  .ref-val  { color: var(--text); font-weight: 600; }
+
+  /* ── Meter bar ── */
+  .meter-section { padding: 0 28px 20px; border-bottom: 1px solid var(--border); }
+  .meter-track {
+    width: 100%; height: 14px;
+    background: var(--surface);
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 16px 0 6px;
+    position: relative;
+  }
+  .meter-fill {
+    height: 100%; border-radius: 999px;
+    width: 0%;
+    transition: width 0.07s linear;
+    background: var(--green);
+  }
+  /* Danger zone marker at 85 dBSPL */
+  .danger-marker {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: rgba(245,66,66,0.5);
+    left: 60.7%; /* 85/140 */
+  }
+  .scale-row {
+    display: flex; justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--muted);
+    padding: 0 2px;
+  }
+  .danger-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--red);
+    text-align: right; margin-top: 4px;
+  }
+
+  /* ── FFT Spectrum ── */
+  .section-head {
+    padding: 14px 28px 8px;
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .section-head span { color: var(--purple); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+  canvas {
+    display: block;
+    width: 100%;
+    background: transparent;
+  }
+  #fft-canvas { height: 130px; padding: 0 28px 16px; }
+  #history-canvas { height: 80px; padding: 0 28px 16px; border-top: 1px solid var(--border); }
+
+  /* ── Calibration ── */
+  .calib-section {
+    padding: 16px 28px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .calib-title {
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 10px;
+  }
+  .calib-row {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .calib-row label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; color: var(--text);
+    white-space: nowrap;
+  }
+  input[type=range] {
+    flex: 1; accent-color: var(--purple);
+    cursor: pointer;
+  }
+  .calib-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 600;
+    color: var(--purple);
+    min-width: 50px; text-align: right;
+  }
+  .calib-note {
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ── Stats ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border-top: 1px solid var(--border);
+  }
+  .stat-box {
+    padding: 16px 12px;
+    text-align: center;
+    border-right: 1px solid var(--border);
+  }
+  .stat-box:last-child { border-right: none; }
+  .stat-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px; font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Suggestion ── */
+  .suggestion {
+    padding: 12px 28px;
+    font-size: 13px; color: var(--muted);
+    text-align: center;
+    border-top: 1px solid var(--border);
+    line-height: 1.5;
+    min-height: 44px;
+    transition: color 0.3s;
+  }
+
+  /* ── Buttons ── */
+  .btn-section {
+    padding: 16px 28px;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 10px;
+  }
+  .btn {
+    flex: 1; padding: 12px;
+    border-radius: 10px;
+    font-family: 'Syne', sans-serif;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    letter-spacing: 0.02em;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-start { background: #0d1f1a; color: var(--green); border-color: #1a4035; }
+  .btn-start:hover { background: #122618; }
+  .btn-stop  { background: #1f0d0d; color: var(--red);   border-color: #401010; }
+  .btn-stop:hover  { background: #261010; }
+  .btn-reset { background: var(--surface); color: var(--muted); border-color: var(--border); }
+  .btn-reset:hover { background: #1a2030; }
+
+  /* ── Warn box ── */
+  .warn-box {
+    margin: 0 28px 16px;
+    background: #1f1a0d;
+    border: 1px solid #40350a;
+    color: var(--yellow);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    display: none;
+    line-height: 1.5;
+  }
+
+  /* ── Reference card ── */
+  .ref-card {
+    width: 100%; max-width: 700px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+  .ref-card-title {
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 12px;
+  }
+  .ref-table {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+  .ref-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px;
+    background: var(--surface);
+    border-radius: 8px;
+  }
+  .ref-db {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    min-width: 52px;
+  }
+  .ref-desc {
+    font-size: 12px; color: var(--muted);
+  }
+
+  /* ── Footer ── */
+  .footer {
+    width: 100%; max-width: 700px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: #2a3240;
+    text-align: center;
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title">dB<span>SPL</span> Analyzer</div>
+  <div class="live-chip" id="livechip">
+    <div class="live-dot" id="dot"></div>
+    <span id="status-text">idle</span>
+  </div>
+</div>
+
+<!-- Main card -->
+<div class="card">
+
+  <!-- Big SPL number -->
+  <div class="spl-panel">
+    <div class="spl-left">
+      <div class="spl-label">Sound Pressure Level</div>
+      <div class="spl-value-row">
+        <div class="spl-number" id="spl-number">--</div>
+        <div class="spl-unit">dB SPL</div>
+      </div>
+      <span class="badge b-idle" id="badge">waiting</span>
+    </div>
+    <div class="spl-right">
+      <div class="ref-row"><span class="ref-name">Peak hold</span><span class="ref-val" id="peak-hold">-- dB</span></div>
+      <div class="ref-row"><span class="ref-name">OSHA limit</span><span class="ref-val" style="color:var(--red)">85 dB</span></div>
+      <div class="ref-row"><span class="ref-name">Pain level</span><span class="ref-val" style="color:var(--red)">130 dB</span></div>
+    </div>
+  </div>
+
+  <!-- Meter bar -->
+  <div class="meter-section">
+    <div class="meter-track">
+      <div class="meter-fill" id="meter-fill"></div>
+      <div class="danger-marker" title="85 dB OSHA Limit"></div>
+    </div>
+    <div class="scale-row">
+      <span>0</span><span>20</span><span>40</span><span>60</span>
+      <span>80</span><span>100</span><span>120</span><span>140 dB</span>
+    </div>
+    <div class="danger-label">▲ 85 dB — OSHA 8hr exposure limit</div>
+  </div>
+
+  <!-- FFT Spectrum -->
+  <div class="section-head">
+    Frequency Spectrum (FFT)
+    <span id="peak-freq">peak: -- Hz</span>
+  </div>
+  <canvas id="fft-canvas"></canvas>
+
+  <!-- Warn box -->
+  <div class="warn-box" id="warnbox">
+    Microphone access denied. Click Allow when prompted, or check browser site permissions.
+  </div>
+
+  <!-- History -->
+  <div class="section-head" style="padding-top:0; border-top:1px solid var(--border)">
+    SPL History
+    <span id="time-label">-- sec</span>
+  </div>
+  <canvas id="history-canvas"></canvas>
+
+  <!-- Calibration -->
+  <div class="calib-section">
+    <div class="calib-title">🎛 Mic Calibration Offset</div>
+    <div class="calib-row">
+      <label>Offset</label>
+      <input type="range" id="calib-slider" min="60" max="110" value="85" step="1">
+      <div class="calib-val" id="calib-display">+85 dB</div>
+    </div>
+    <div class="calib-note">
+      Formula: dBSPL = dBFS + offset<br>
+      Typical laptop mic: +85 | Phone mic: +88 | USB mic: +80 | Pro mic: adjust to match known source<br>
+      💡 To calibrate: play a 1kHz tone at known dB and adjust until meter matches.
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-box">
+      <div class="stat-name">Average</div>
+      <div class="stat-value" id="stat-avg">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-name">Min</div>
+      <div class="stat-value" id="stat-min">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-name">Max</div>
+      <div class="stat-value" id="stat-max">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-name">Samples</div>
+      <div class="stat-value" id="stat-count">0</div>
+    </div>
+  </div>
+
+  <!-- Suggestion -->
+  <div class="suggestion" id="suggestion">Press Start and allow microphone access to begin measurement</div>
+
+  <!-- Buttons -->
+  <div class="btn-section">
+    <button class="btn btn-start" id="btn-start" onclick="startMeter()">▶ Start</button>
+    <button class="btn btn-stop"  id="btn-stop"  onclick="stopMeter()"  style="display:none">■ Stop</button>
+    <button class="btn btn-reset" id="btn-reset" onclick="resetStats()" style="display:none">↺ Reset</button>
+  </div>
+
+</div>
+
+<!-- Reference levels -->
+<div class="ref-card">
+  <div class="ref-card-title">Real-world dBSPL Reference Levels</div>
+  <div class="ref-table">
+    <div class="ref-item"><span class="ref-db" style="color:#38bdf8">10–20 dB</span><span class="ref-desc">Rustling leaves, breathing</span></div>
+    <div class="ref-item"><span class="ref-db" style="color:var(--green)">30–40 dB</span><span class="ref-desc">Library, quiet room</span></div>
+    <div class="ref-item"><span class="ref-db" style="color:var(--green)">50–60 dB</span><span class="ref-desc">Normal conversation</span></div>
+    <div class="ref-item"><span class="ref-db" style="color:var(--yellow)">60–70 dB</span><span class="ref-desc">Office, TV, 3D printer hum</span></div>
+    <div class="ref-item"><span class="ref-db" style="color:var(--orange)">70–85 dB</span><span class="ref-desc">Busy traffic, loud machine</span></div>
+    <div class="ref-item"><span class="ref-db" style="color:var(--red)">85–95 dB</span><span class="ref-desc">⚠ 3D printer peaks, power tools</span></div>
+    <div class="ref-item"><span class="ref-db" style="color:var(--red)">100–110 dB</span><span class="ref-desc">🔴 Chainsaw, concert</span></div>
+    <div class="ref-item"><span class="ref-db" style="color:var(--red)">120–140 dB</span><span class="ref-desc">🔴 Jet engine, pain threshold</span></div>
+  </div>
+</div>
+
+<div class="footer">
+  dBSPL = dBFS + Mic Calibration Offset &nbsp;|&nbsp; For precise results use a calibrated measurement mic (e.g. UMIK-1)<br>
+  FFT resolution depends on browser AudioContext sample rate. Best used in Chrome or Firefox.
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let audioCtx, analyser, sourceNode, micStream, rafId;
+let running   = false;
+let levels    = [];
+let peakHold  = -Infinity;
+let peakTimer = null;
+let sampleCount = 0;
+let MIC_OFFSET = 85;   // dBFS → dBSPL calibration offset
+
+const fftCanvas  = document.getElementById('fft-canvas');
+const histCanvas = document.getElementById('history-canvas');
+const fftCtx     = fftCanvas.getContext('2d');
+const histCtx    = histCanvas.getContext('2d');
+
+// ─── Calibration slider ───────────────────────────────────────────────────────
+document.getElementById('calib-slider').addEventListener('input', function() {
+  MIC_OFFSET = parseInt(this.value);
+  document.getElementById('calib-display').textContent = '+' + MIC_OFFSET + ' dB';
+});
+
+// ─── Cross-browser rounded rect ───────────────────────────────────────────────
+function roundRect(c, x, y, w, h, r) {
+  if (w < 2*r) r = w/2;
+  if (h < 2*r) r = h/2;
+  c.beginPath();
+  c.moveTo(x+r, y);
+  c.arcTo(x+w, y,   x+w, y+h, r);
+  c.arcTo(x+w, y+h, x,   y+h, r);
+  c.arcTo(x,   y+h, x,   y,   r);
+  c.arcTo(x,   y,   x+w, y,   r);
+  c.closePath();
+}
+
+// ─── dBFS → dBSPL ────────────────────────────────────────────────────────────
+function toSPL(dbfs) {
+  return Math.max(0, Math.min(140, dbfs + MIC_OFFSET));
+}
+
+// ─── Colour by SPL ───────────────────────────────────────────────────────────
+function splColor(spl) {
+  if (spl < 40)  return '#38bdf8';
+  if (spl < 60)  return '#22d3a0';
+  if (spl < 70)  return '#f5c842';
+  if (spl < 85)  return '#f58c42';
+  return '#f54242';
+}
+
+// ─── Classify SPL ─────────────────────────────────────────────────────────────
+function classify(spl) {
+  if (spl < 30)  return { label:'Silence',  cls:'b-silence', tip:'Near silence — extremely quiet environment.',           color:'#38bdf8' };
+  if (spl < 50)  return { label:'Quiet',    cls:'b-quiet',   tip:'Quiet room. Great for focus and sleep.',                color:'#22d3a0' };
+  if (spl < 65)  return { label:'Moderate', cls:'b-moderate',tip:'Normal speech level. Comfortable for conversation.',    color:'#f5c842' };
+  if (spl < 85)  return { label:'Loud',     cls:'b-loud',    tip:'Louder environment. OK for short periods.',             color:'#f58c42' };
+  return              { label:'⚠ DANGER', cls:'b-danger',  tip:'Above OSHA 85 dB limit! Hearing damage risk.',          color:'#f54242' };
+}
+
+// ─── Meter fill % (0–140 dBSPL range) ────────────────────────────────────────
+function toPct(spl) {
+  return Math.max(0, Math.min(100, (spl / 140) * 100));
+}
+
+// ─── FFT frequency label ──────────────────────────────────────────────────────
+function freqLabel(hz) {
+  return hz >= 1000 ? (hz/1000).toFixed(1)+'k' : hz+'';
+}
+
+// ─── Draw FFT spectrum ────────────────────────────────────────────────────────
+function drawFFT() {
+  if (!analyser) return;
+  const W   = fftCanvas.offsetWidth  || 644;
+  const H   = 110;
+  const DPR = window.devicePixelRatio || 1;
+  fftCanvas.width  = W * DPR;
+  fftCanvas.height = H * DPR;
+  fftCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  const bufLen  = analyser.frequencyBinCount;
+  const freqData = new Uint8Array(bufLen);
+  analyser.getByteFrequencyData(freqData);
+
+  const sampleRate = audioCtx.sampleRate;
+  const nyquist    = sampleRate / 2;
+
+  // Bands to display: 20 Hz – 20 kHz (log scale)
+  const minHz  = 20, maxHz = Math.min(20000, nyquist);
+  const BAR_W  = 5, GAP = 1;
+  const numBars = Math.floor(W / (BAR_W + GAP));
+
+  // Background grid lines
+  fftCtx.strokeStyle = '#1e2733';
+  fftCtx.lineWidth = 1;
+  [0,25,50,75,100].forEach(pct => {
+    const y = H - (pct/100) * (H - 10) - 5;
+    fftCtx.beginPath();
+    fftCtx.moveTo(0, y); fftCtx.lineTo(W, y);
+    fftCtx.stroke();
+  });
+
+  let peakHz = 0, peakAmp = 0;
+
+  for (let i = 0; i < numBars; i++) {
+    // Log-spaced frequency
+    const logMin = Math.log10(minHz), logMax = Math.log10(maxHz);
+    const hz  = Math.pow(10, logMin + (i / numBars) * (logMax - logMin));
+    const bin = Math.round((hz / nyquist) * bufLen);
+    const amp = freqData[Math.min(bin, bufLen - 1)];
+
+    if (amp > peakAmp) { peakAmp = amp; peakHz = Math.round(hz); }
+
+    // Convert amp (0–255) to fake dBSPL for colour
+    const fakeSPL = (amp / 255) * 100 + 30;
+    const barH    = Math.max(2, (amp / 255) * (H - 14));
+    const x = i * (BAR_W + GAP);
+    const y = H - barH - 4;
+
+    fftCtx.fillStyle   = splColor(fakeSPL);
+    fftCtx.globalAlpha = 0.85;
+    roundRect(fftCtx, x, y, BAR_W, barH, 1.5);
+    fftCtx.fill();
+  }
+  fftCtx.globalAlpha = 1;
+
+  // Frequency axis labels
+  fftCtx.fillStyle = '#3a4a60';
+  fftCtx.font = '9px JetBrains Mono, monospace';
+  fftCtx.textAlign = 'center';
+  [100, 500, 1000, 2000, 5000, 10000].forEach(hz => {
+    if (hz > maxHz) return;
+    const logMin = Math.log10(minHz), logMax = Math.log10(maxHz);
+    const xPct = (Math.log10(hz) - logMin) / (logMax - logMin);
+    const x = xPct * W;
+    fftCtx.fillText(freqLabel(hz)+'Hz', x, H - 1);
+  });
+
+  if (peakHz > 0) {
+    document.getElementById('peak-freq').textContent = 'peak: ' + (peakHz >= 1000 ? (peakHz/1000).toFixed(2)+'kHz' : peakHz+'Hz');
+  }
+}
+
+// ─── Draw SPL history ─────────────────────────────────────────────────────────
+function drawHistory() {
+  const W   = histCanvas.offsetWidth || 644;
+  const H   = 60;
+  const DPR = window.devicePixelRatio || 1;
+  histCanvas.width  = W * DPR;
+  histCanvas.height = H * DPR;
+  histCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  histCtx.clearRect(0, 0, W, H);
+
+  // 85 dB danger line
+  const dangerY = H - ((85/140) * (H - 8)) - 4;
+  histCtx.strokeStyle = 'rgba(245,66,66,0.25)';
+  histCtx.setLineDash([4,4]);
+  histCtx.beginPath();
+  histCtx.moveTo(0, dangerY); histCtx.lineTo(W, dangerY);
+  histCtx.stroke();
+  histCtx.setLineDash([]);
+
+  const BAR_W  = 5, GAP = 2;
+  const maxBars = Math.floor(W / (BAR_W + GAP));
+  const slice   = levels.slice(-maxBars);
+
+  slice.forEach((spl, i) => {
+    const alpha = 0.3 + 0.7 * ((i+1)/slice.length);
+    const barH  = Math.max(2, (spl/140) * (H - 8));
+    const x = i * (BAR_W + GAP);
+    const y = H - barH - 4;
+    histCtx.fillStyle   = splColor(spl);
+    histCtx.globalAlpha = alpha;
+    roundRect(histCtx, x, y, BAR_W, barH, 1.5);
+    histCtx.fill();
+  });
+  histCtx.globalAlpha = 1;
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+function updateStats() {
+  if (!levels.length) return;
+  const avg = levels.reduce((s,v) => s+v, 0) / levels.length;
+  document.getElementById('stat-avg').textContent   = avg.toFixed(1);
+  document.getElementById('stat-min').textContent   = Math.min(...levels).toFixed(1);
+  document.getElementById('stat-max').textContent   = Math.max(...levels).toFixed(1);
+  document.getElementById('stat-count').textContent = sampleCount;
+  document.getElementById('time-label').textContent = (sampleCount / 15).toFixed(0) + ' sec';
+}
+
+// ─── Main tick ────────────────────────────────────────────────────────────────
+function tick() {
+  if (!running) return;
+
+  // RMS → dBFS → dBSPL
+  const buffer = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buffer);
+  const rms  = Math.sqrt(buffer.reduce((s,v) => s+v*v, 0) / buffer.length);
+  const dbfs = rms <= 1e-12 ? -90 : Math.max(-90, Math.min(0, 20 * Math.log10(rms)));
+  const spl  = toSPL(dbfs);
+
+  sampleCount++;
+  const info = classify(spl);
+  const pct  = toPct(spl);
+
+  // Big number
+  const numEl = document.getElementById('spl-number');
+  numEl.textContent = spl.toFixed(1);
+  numEl.style.color = info.color;
+
+  // Meter
+  const fill = document.getElementById('meter-fill');
+  fill.style.width      = pct + '%';
+  fill.style.background = splColor(spl);
+
+  // Badge
+  const badge = document.getElementById('badge');
+  badge.textContent = info.label;
+  badge.className   = 'badge ' + info.cls;
+
+  // Suggestion
+  document.getElementById('suggestion').textContent = info.tip;
+
+  // Peak hold (decay after 2s)
+  if (spl > peakHold) {
+    peakHold = spl;
+    document.getElementById('peak-hold').textContent = spl.toFixed(1) + ' dB';
+    clearTimeout(peakTimer);
+    peakTimer = setTimeout(() => { peakHold = -Infinity; }, 2000);
+  }
+
+  // Store & draw
+  levels.push(spl);
+  drawFFT();
+
+  if (levels.length % 5 === 0) {
+    updateStats();
+    drawHistory();
+  }
+
+  rafId = requestAnimationFrame(tick);
+}
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+async function startMeter() {
+  document.getElementById('warnbox').style.display = 'none';
+  try {
+    micStream  = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, video: false });
+    audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+    analyser   = audioCtx.createAnalyser();
+    analyser.fftSize = 4096;         // higher = better frequency resolution
+    analyser.smoothingTimeConstant = 0.75;
+    sourceNode = audioCtx.createMediaStreamSource(micStream);
+    sourceNode.connect(analyser);
+
+    running = true;
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('livechip').classList.add('on');
+    document.getElementById('status-text').textContent = 'recording';
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-stop').style.display  = '';
+    document.getElementById('btn-reset').style.display = '';
+    document.getElementById('suggestion').textContent  = 'Listening… measuring dBSPL';
+    tick();
+  } catch(err) {
+    document.getElementById('warnbox').style.display  = 'block';
+    document.getElementById('suggestion').textContent = 'Mic error: ' + err.message;
+  }
+}
+
+// ─── Stop ─────────────────────────────────────────────────────────────────────
+function stopMeter() {
+  running = false;
+  cancelAnimationFrame(rafId);
+  if (sourceNode) sourceNode.disconnect();
+  if (audioCtx)   audioCtx.close();
+  if (micStream)  micStream.getTracks().forEach(t => t.stop());
+
+  document.getElementById('dot').classList.remove('on');
+  document.getElementById('livechip').classList.remove('on');
+  document.getElementById('status-text').textContent = 'stopped';
+  document.getElementById('btn-start').style.display = '';
+  document.getElementById('btn-stop').style.display  = 'none';
+  document.getElementById('suggestion').textContent  = 'Stopped. Press Start to resume.';
+  updateStats();
+  drawHistory();
+}
+
+// ─── Reset ────────────────────────────────────────────────────────────────────
+function resetStats() {
+  levels = []; sampleCount = 0; peakHold = -Infinity;
+  ['stat-avg','stat-min','stat-max'].forEach(id => document.getElementById(id).textContent = '--');
+  document.getElementById('stat-count').textContent = '0';
+  document.getElementById('peak-hold').textContent  = '-- dB';
+  document.getElementById('time-label').textContent = '-- sec';
+
+  const numEl = document.getElementById('spl-number');
+  numEl.textContent = '--'; numEl.style.color = '#fff';
+
+  const badge = document.getElementById('badge');
+  badge.textContent = 'waiting'; badge.className = 'badge b-idle';
+
+  document.getElementById('meter-fill').style.width = '0%';
+  document.getElementById('suggestion').textContent  = 'Stats cleared. Still listening…';
+
+  const DPR = window.devicePixelRatio || 1;
+  histCtx.clearRect(0, 0, histCanvas.width/DPR, histCanvas.height/DPR);
+}
+</script>
+</body>
+</html>
